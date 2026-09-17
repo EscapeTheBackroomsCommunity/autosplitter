@@ -5,6 +5,12 @@ Based on uhara by ru-mii (https://github.com/ru-mii/uhara)
 Big thanks to Nikoheart and ru-mii for help!
 
 Version history:
+==Verson 3.1==
+    Game versions: 5.0+
+    Fixed Main Menu not being properly detected in versions 5.3+
+    Fixed Controller Restarts not properly pausing the timer
+    By RedTuna
+
 
 ==Version 3.0==
     Game versions: 5.0+
@@ -46,30 +52,31 @@ state("Backrooms-WinGDK-Shipping") {}
 
 startup
 {
-	Assembly.Load(File.ReadAllBytes("Components/uhara9")).CreateInstance("Main");
+	Assembly.Load(File.ReadAllBytes("Components/uhara10")).CreateInstance("Main");
     vars.Uhara.AlertLoadless();
-    //vars.Uhara.EnableDebug();
+    vars.Uhara.EnableDebug();
 
     vars.HasStarted = false;
     vars.HasExited = false;
+    vars.Printed = false;
 }
 
 init
 {
-    // IntPtr gWorld = vars.Uhara.ScanRel(3, "48 8B 1D ?? ?? ?? ?? 48 85 DB 74 ?? 41 B0 01");
+
 	vars.Events = vars.Uhara.CreateTool("UnrealEngine", "Events");
+    vars.Utils = vars.Uhara.CreateTool("UnrealEngine", "Utils");
+
     vars.Resolver.Watch<ulong>("LoadingStart", vars.Events.FunctionFlag("WB_LoadingScreen_C", "WB_LoadingScreen_C", "PreConstruct"));
     vars.Resolver.Watch<ulong>("LoadingFinish", vars.Events.FunctionFlag("MP_PlayerController_C", "MP_PlayerController_C", "ClientGotoState"));
     vars.Resolver.Watch<ulong>("LoadingEnding", vars.Events.FunctionFlag("", "", "ExecuteUbergraph_BP_ExitZone_GameEnding"));
-    vars.Resolver.Watch<ulong>("RestartLevel", vars.Events.FunctionFlag("WB_Button_RestartGame_C", "WB_Button_RestartGame_C", "BndEvt__WB_Button_Close_Button_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature"));
-    vars.Resolver.Watch<byte>("IsInHubGM", vars.Events.FunctionParentPtr("BP_MyGameInstance_C", "BP_MyGameInstance_C", "CheckAchievementQueue"), 0x350);
-    vars.Resolver.Watch<ulong>("Death", vars.Events.FunctionFlag("GameEnd_UI_2_C", "GameEnd_UI_2_C", "PreConstruct"));
-    vars.Resolver.Watch<ulong>("ContinueButton", vars.Events.FunctionFlag("UI_Menu_Evaluation_C", "UI_Menu_Evaluation_C", "BndEvt__UI_Menu_Evaluation_UI_Menu_Button_K2Node_ComponentBoundEvent_1_OnClick__DelegateSignature"));
-    vars.Resolver.Watch<ulong>("MainMenu", vars.Events.FunctionFlag("CheatManager", "CheatManager", "ReceiveInitCheatManager"));
-    // vars.Resolver.Watch<uint>("GWorldName", gWorld, 0x18);
+    vars.Tranisition = vars.Events.InstancePtr("Package", "/Game/Maps/TransitionLevel");
+    vars.Resolver.Watch<uint>("GWorldName", vars.Utils.GWorld, 0x18);
 
     vars.WasEnding = false;
 	vars.LoadingState = true;
+
+    current.World = "";
 }
 
 start
@@ -83,17 +90,20 @@ start
 update
 {
     vars.Uhara.Update();
+    
+	var world = vars.Utils.FNameToString(current.GWorldName);
+	if (!string.IsNullOrEmpty(world) && world != "None") current.World = world;
+    
+    IntPtr Tranisition = vars.Resolver.Read<IntPtr>(vars.Tranisition);
 
-    // var world = vars.Events.FNameToString(current.GWorldName);
-	// if (!string.IsNullOrEmpty(world) && world != "None") current.World = world;
-
-	if ((old.LoadingStart != current.LoadingStart) || (old.RestartLevel != current.RestartLevel) || (old.MainMenu != current.MainMenu) || (old.LoadingEnding != current.LoadingEnding)) vars.LoadingState = true;
-    if (old.MainMenu != current.MainMenu) vars.HasExited = true;
+	if ((old.LoadingStart != current.LoadingStart) || (Tranisition != IntPtr.Zero)|| (current.World == "MainMenuMap")||(old.LoadingEnding != current.LoadingEnding)) vars.LoadingState = true;
+    if (current.World == "MainMenuMap") vars.HasExited = true;
     if ((old.LoadingFinish != current.LoadingFinish) && vars.LoadingState) {
         vars.LoadingState = false;
         vars.HasExited = false;
         vars.WasEnding = false;
     }
+    
 }
 
 split
@@ -109,11 +119,6 @@ split
         vars.WasEnding = true;
         return true;
     }
-}
-
-reset
-{
-    if ((current.IsInHubGM == 1) && ((((old.RestartLevel != current.RestartLevel) || (old.Death != current.Death)) && (old.LoadingStart != current.LoadingStart)) || (old.ContinueButton != current.ContinueButton))) return true;
 }
 
 isLoading
